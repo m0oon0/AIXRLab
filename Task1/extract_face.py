@@ -44,7 +44,7 @@ def resize_height(image, height):
 
 # Input : Directory of the extracted frames
 
-def extract_face(INPATH, OUTPATH=""):
+def extract_face(INPATH, OUTPATH):
 
     if OUTPATH == "auto":
         OUTPATH = os.path.dirname(os.path.realpath(INPATH))
