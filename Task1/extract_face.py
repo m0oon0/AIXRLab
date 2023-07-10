@@ -82,7 +82,7 @@ def extract_face(INPATH, OUTPATH=""):
                 continue
             
             bbox_image, clip = Img2Face(image)
-            bbox_image = resize_height(bbox_image, 300)
+            bbox_image = resize_height(bbox_image, 100)
 
             frame_count += 1
             BBOX_PATH = os.path.join(bbox_DIR, "bbox_{:03d}.jpg".format(frame_count))
