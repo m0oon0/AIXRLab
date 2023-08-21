@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Emotion and Gaze Recognition</title>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        .container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+            height: 100vh;
+        }
+
+        .video-container {
+            display: flex;
+            width: 60%;
+            background-color: #e0e0e0;
+        }
+
+        .button-container {
+            width: 40%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .checkbox-container {
+            margin-bottom: 10px;
+        }
+
+        .stt-result {
+            background-color: #e0e0e0;
+        }
+
+        .inline-checkbox {
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        .custom-btn {
+            display: inline-block;
+            margin-right: 10px;
+            width: 100px;
+            height: 40px;
+            text-align: center;
+            line-height: 40px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .selected {
+            background-color: Blue; /* Change to your preferred color */
+            color: white;
+        }
+
+        .graph-container {
+            padding: 20px;
+            height: 200px;
+        }
+
+        .text-container {
+            display: flex;
+            width: 640px;
+            margin-top: 100px;
+            margin-right: 100px;
+            padding: 50px;
+            height: 500px;
+        }
+
+        .heatmap-container {
+            height: 600px;
+        }
+
+        .button-right {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <div id="video-container">
+            <div><a href="/"><button class="custom-btn selected">HOME</button></a></div>
+            <br>
+            <div><img id="video-frame" width="640" height="480"/></div>
+            <br>
+            <div id="text-container">
+            </div>
+            
+        </div>
+
+        <div class="button-container">
+
+            <input type="file" name="video_file" id="input_video_file" accept="video/*" required>
+            <br><br>
+
+            <h5>표정 인식
+                <input type="checkbox" id="emotion_checkbox" name="emotion_checkbox" class="inline-checkbox">
+            </h5>
+            <div id="emotionBtnGroup">
+                <button class="custom-btn" data-option="all">ALL</button>
+                <button class="custom-btn" data-option="top3">Top3</button>
+                <button class="custom-btn" data-option="top1">Top1</button>
+            </div>
+            <br><br>
+
+            <h5>시선 추적
+                <input type="checkbox" id="gaze_checkbox" name="gaze_checkbox" class="inline-checkbox">
+            </h5>
+            <div id="gazeBtnGroup">
+                <button class="custom-btn" data-option="value">VALUE</button>
+                <button class="custom-btn" data-option="vector">VECTOR</button>
+                <button class="custom-btn" data-option="change">변화량</button>
+            </div>
+
+            <div class="graph-container">
+                <canvas id="gazeChart" width="400" height="200"></canvas>
+            </div>
+            <br><br>
+
+            <h5>음성 추출
+                <input type="checkbox" id="voice_checkbox" name="voice_checkbox" class="inline-checkbox">
+            </h5>
+
+            <div class="button-right"><button class="custom-btn selected" id="processButton">분석 시작</button></div>
+            
+            <img id="heatmap-container"/>
+
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.1.3/socket.io.js"></script>
+
+    <script>
+
+        // Options
+        let emotionOpt = ""; 
+        let gazeOpt = new Set();
+        let voiceOpt = "";
+        
+        // CHange on button click
+        const emotionBtnGroup = document.getElementById('emotionBtnGroup');
+        const emotionButtons = emotionBtnGroup.querySelectorAll('.custom-btn');
+
+        emotionButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                emotionButtons.forEach(btn => btn.classList.remove('selected'));
+                button.classList.add('selected');
+                emotionOpt = button.getAttribute('data-option');
+            });
+        });
+
+        const gazeBtnGroup = document.getElementById('gazeBtnGroup');
+        const gazeButtons = gazeBtnGroup.querySelectorAll('.custom-btn');
+
+        gazeButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                if (gazeOpt.has(button.getAttribute('data-option'))){
+                    gazeOpt.delete(button.getAttribute('data-option'));
+                    button.classList.remove('selected');
+                }
+                
+                else {
+                    button.classList.add('selected');
+                    gazeOpt.add(button.getAttribute('data-option'));
+                }
+            });
+        });
+
+        // Gaze change graph
+        var gazeChart = new Chart(document.getElementById('gazeChart'), {
+            type: 'line',
+            data: {
+                labels: Array.from({ length: 1000 }, (_, i) => i + 1),
+                datasets: [{
+                    label: 'Gaze Data',
+                    borderColor: 'rgb(0, 0, 255)',
+                    borderWidth: 1,
+                    data: Array.from({ length: 1000 }),
+                }]
+            },
+            options: {
+                scales: {
+                    x: {
+                        display : false,
+                        title: {
+                            display: true,
+                            text: 'Frame'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Gaze Change'
+                        }
+                    }
+                }
+            }
+        });
+
+        var socket = io.connect('http://127.0.0.1:5000');
+
+        socket.on('connect', function() {
+            console.log('Connected to server');
+        });
+
+        socket.on('disconnect', function() {
+            console.log('Disconnected from server');
+        });
+
+        // Process button
+        document.getElementById('processButton').addEventListener('click', function() {
+
+            var inputVideo = document.getElementById('input_video_file').files[0].name;
+
+            if (! document.getElementById('emotion_checkbox').checked) {
+                emotionOpt = ""
+            }
+            if (! document.getElementById('gaze_checkbox').checked) {
+                gazeOpt = []
+            }
+            if (document.getElementById('voice_checkbox').checked) {
+                voiceOpt = "stt"
+            }
+
+            const gazeOptArr = Array.from(gazeOpt);
+
+            socket.emit('start_analysis', {
+                'inputVideo': inputVideo,
+                'emotionOpt': emotionOpt,
+                'gazeOpt': gazeOptArr,
+                'voiceOpt' : voiceOpt
+            });
+        });
+
+        // Update frame output & Gaze graph
+        var previousGaze = null;
+
+        socket.on('frame_update', function(data) {
+
+            if (data.gaze){
+                var currentGaze = data.gaze;
+                var frameNum = data.frame_num;
+
+                var squaredDifference = 0;
+                if (previousGaze !== null) {
+                    for (var i = 0; i < currentGaze.length; i++) {
+                        squaredDifference += Math.pow(currentGaze[i] - previousGaze[i], 2);
+                    }
+                }
+                gazeChart.data.labels.push(frameNum);
+                gazeChart.data.datasets[0].data[frameNum] = squaredDifference;
+                gazeChart.update();
+
+                previousGaze = currentGaze.slice();
+            }
+
+            var videoFrame = document.getElementById('video-frame');
+            var blob = new Blob([data.frame], { type: 'image/jpeg' });
+            var imageUrl = URL.createObjectURL(blob);
+            videoFrame.src = imageUrl;
+            
+        });
+
+        $(document).ready(function() {
+            socket.connect();
+        });
+
+
+        // Speech to Text output
+        socket.on('stt_update', function(data) {
+
+            const text = data.text;
+            const color = data.color;
+            const heatmap = data.heatmap;
+
+            const textContainer = document.getElementById("text-container");
+
+            const EMOTION_LIST = ['Surprise', 'Fear', 'Disgust', 'Happy', 'Sad', 'Anger', 'Neutral']
+            const COLOR_LIST = ['orange', 'gray', 'green', 'pink', 'blue', 'red', 'black']
+
+            for (let i = 0; i < EMOTION_LIST.length; i++) {
+                const emotion = EMOTION_LIST[i];
+
+                const span = document.createElement("span");
+                span.textContent = emotion;
+
+                span.style.fontSize = "20px";
+                span.style.color = COLOR_LIST[i];
+                textContainer.appendChild(span);
+
+                const spaceSpan = document.createElement("span");
+                spaceSpan.textContent = " ";
+                textContainer.appendChild(spaceSpan);
+            }
+
+            const lineBreak = document.createElement("br");
+            textContainer.appendChild(lineBreak);
+            textContainer.appendChild(lineBreak);
+
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+
+                const span = document.createElement("span");
+                span.textContent = char;
+
+                if (char === " ") {
+                    textContainer.appendChild(span);
+                    continue;
+                }
+
+                span.style.fontSize = "20px";
+                span.style.color = color[i];
+                textContainer.appendChild(span);
+            }
+
+            const heatmapContainer = document.getElementById("heatmap-container");
+            var blob = new Blob([heatmap], { type: 'image/jpeg' });
+            var imageUrl = URL.createObjectURL(blob);
+            heatmapContainer.src = imageUrl;
+
+        })
+    </script>
+</body>
+</html>
